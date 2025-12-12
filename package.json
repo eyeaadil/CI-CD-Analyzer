@@ -1,0 +1,43 @@
+{
+  "name": "ci-cd-analyzer",
+  "version": "1.0.0",
+  "description": "AI-Driven CI/CD Failure Analyzer",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:backend": "ts-node backend/src/index.ts",
+    "start:frontend": "npm run dev --prefix frontend",
+    "start:worker": "ts-node backend/src/workers/logProcessor.ts"
+  },
+  "keywords": [],
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "express": "^4.17.1",
+    "passport": "^0.7.0",
+    "passport-github2": "^0.1.12",
+    "express-session": "^1.18.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "bullmq": "^5.10.2",
+    "ioredis": "^5.4.1",
+    "@octokit/rest": "^21.0.1",
+    "@octokit/app": "^15.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.7.4"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.13",
+    "@types/passport": "^1.0.16",
+    "@types/passport-github2": "^1.2.9",
+    "@types/express-session": "^1.18.0",
+    "@types/dotenv": "^8.2.0",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.14.9",
+    "prisma": "^5.17.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2",
+    "@types/jsonwebtoken": "^9.0.6"
+  },
+  "author": "",
+  "license": "ISC"
+}

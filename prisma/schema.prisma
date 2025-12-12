@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. User Model
+// Stores user information, authenticated via GitHub.
+model User {
+  id        Int      @id @default(autoincrement())
+  githubId  String   @unique
+  username  String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repos Repo[]
+}
+
+// 2. Repo Model
+// Stores information about repositories onboarded by users.
+model Repo {
+  id        Int      @id @default(autoincrement())
+  name      String
+  githubId  String   @unique
+  owner     String
+  isPrivate Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  runs WorkflowRun[]
+
+  @@index([userId])
+}
+
+// 3. WorkflowRun Model
+// Stores information about a specific CI/CD workflow run.
+model WorkflowRun {
+  id            Int      @id @default(autoincrement())
+  githubRunId   String   @unique
+  workflowName  String
+  status        String   // e.g., 'success', 'failure', 'in_progress'
+  triggerEvent  String
+  commitSha     String
+  branch        String
+  actor         String
+  runUrl        String
+  rawLogUrl     String?  // URL to the stored raw log file (e.g., in S3)
+  createdAt     DateTime @default(now())
+
+  repoId Int
+  repo   Repo @relation(fields: [repoId], references: [id])
+
+  @@index([repoId])
+}
