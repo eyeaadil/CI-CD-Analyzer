@@ -7,7 +7,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start:backend": "ts-node backend/src/index.ts",
     "start:frontend": "npm run dev --prefix frontend",
-    "start:worker": "ts-node backend/src/workers/logProcessor.ts"
+    "start:worker": "ts-node backend/src/workers/logProcessor.ts",
+    "prisma:generate": "prisma generate --schema=./backend/prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=./backend/prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema=./backend/prisma/schema.prisma"
   },
   "keywords": [],
   "dependencies": {
