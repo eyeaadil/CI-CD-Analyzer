@@ -57,8 +57,8 @@ export const AuthController = {
         create: { githubId: String(gh.id), username: gh.login, avatarUrl: gh.avatar_url },
       });
 
-      // Issue JWT
-      const token = signJwt({ sub: user.id, username: user.username });
+      // Issue JWT - convert user.id to string for JWT sub
+      const token = signJwt({ sub: String(user.id), username: user.username });
 
       const target = `${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}`;
       return res.redirect(302, target);
@@ -75,7 +75,7 @@ export const AuthController = {
       if (!token) return res.status(401).json({ message: 'Missing token' });
 
       const payload = verifyJwt(token);
-      const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+      const user = await prisma.user.findUnique({ where: { id: parseInt(payload.sub) } });
       if (!user) return res.status(401).json({ message: 'Invalid token' });
       return res.json(user);
     } catch {

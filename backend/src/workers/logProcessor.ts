@@ -1,8 +1,12 @@
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { App } from '@octokit/app';
-import { Octokit } from '@octokit/rest';
+// import { App } from '@octokit/app';
+// import { Octokit } from '@octokit/rest';
+import axios from 'axios';
+import AdmZip from 'adm-zip';
 import { LogProcessingJobData } from '../queues/logProcessingQueue';
+import { LogParserService } from '../services/logParser';
+import { AIAnalyzerService } from '../services/aiAnalyzer';
 
 const redisConnection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -16,9 +20,14 @@ const worker = new Worker<LogProcessingJobData>(
 
     try {
       // 1. Authenticate as the GitHub App Installation
+      // Dynamic import for ESM packages
+      const { App } = await import('@octokit/app');
+      const { Octokit } = await import('@octokit/rest');
+
       const app = new App({
         appId: process.env.GITHUB_APP_ID!,
         privateKey: process.env.GITHUB_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        Octokit,
       });
 
       const octokit = await app.getInstallationOctokit(installationId);
@@ -34,12 +43,43 @@ const worker = new Worker<LogProcessingJobData>(
       // The response.url is a temporary URL to the log zip file
       console.log(`Successfully fetched log URL for run ${runId}: ${response.url}`);
 
-      // TODO: In the next step, we will:
-      // 1. Download the zip file from response.url
-      // 2. Unzip it to get the log text
-      // 3. Save the log text to S3
-      // 4. Update our database with the log URL
-      // 5. Pass the log text to the analysis services
+      // 3. Download and Unzip Logs
+      console.log(`Downloading logs from: ${response.url}`);
+      const logResponse = await axios.get(response.url, { responseType: 'arraybuffer' });
+      const zip = new AdmZip(Buffer.from(logResponse.data));
+      const zipEntries = zip.getEntries();
+
+      let fullLogText = '';
+
+      // Combine all .txt files from the zip
+      for (const entry of zipEntries) {
+        if (!entry.isDirectory && entry.entryName.endsWith('.txt')) {
+          const text = entry.getData().toString('utf8');
+          fullLogText += `\n--- Log File: ${entry.entryName} ---\n`;
+          fullLogText += text;
+        }
+      }
+
+      if (!fullLogText) {
+        throw new Error('No .txt log files found in the downloaded zip.');
+      }
+
+      console.log(`Extracted ${fullLogText.length} characters of log data.`);
+
+      // 4. Analyze Logs
+      const logParser = new LogParserService();
+      const aiAnalyzer = new AIAnalyzerService();
+
+      const parsedResult = logParser.parse(fullLogText);
+      const aiResult = await aiAnalyzer.analyzeFailure(parsedResult.steps || [], parsedResult.detectedErrors || []);
+
+      console.log('--- Analysis Result ---');
+      console.log('Root Cause:', aiResult.rootCause);
+      console.log('Suggested Fix:', aiResult.suggestedFix);
+      console.log('-----------------------');
+
+      // TODO: Save results to Database (Result + Log URL)
+
 
     } catch (error) {
       console.error(`Failed to process job for run ID ${runId}:`, error);
