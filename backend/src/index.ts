@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes';
 import webhookRoutes from './routes/webhooks.routes';
+import repoRoutes from './routes/repo.routes';
+import runRoutes from './routes/run.routes';
 import { LogParserService } from './services/logParser';
 import { AIAnalyzerService } from './services/aiAnalyzer';
 
@@ -24,7 +26,7 @@ app.use(
 
 // 2. Body parsers
 // Custom JSON parser that also saves the raw body for webhook signature verification
-app.use(express.json({ 
+app.use(express.json({
   verify: (req, res, buf) => {
     // Save raw body for webhook signature verification
     (req as any).rawBody = buf.toString();
@@ -35,6 +37,8 @@ app.use(express.text({ type: 'text/plain', limit: '10mb' }));
 // 3. API Routes
 app.use('/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/repos', repoRoutes);
+app.use('/api/runs', runRoutes);
 
 app.get('/', (req, res) => {
   res.send('CI/CD Analyzer Backend is running.');

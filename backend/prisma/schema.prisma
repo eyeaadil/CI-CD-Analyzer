@@ -63,6 +63,26 @@ model WorkflowRun {
 
   repoId Int
   repo   Repo @relation(fields: [repoId], references: [id])
+  
+  analysis AnalysisResult? @relation("WorkflowRunAnalysis")
 
   @@index([repoId])
+}
+
+// 4. AnalysisResult Model
+// Stores the output of the AI log analysis.
+model AnalysisResult {
+  id            Int      @id @default(autoincrement())
+  
+  rootCause     String
+  failureStage  String
+  suggestedFix  String
+  
+  detectedErrors Json?   // Storing DetectedError[] as JSON
+  steps          Json?   // Storing LogStep[] as JSON for detailed view
+  
+  createdAt     DateTime @default(now())
+  
+  workflowRunId Int @unique
+  workflowRun   WorkflowRun @relation("WorkflowRunAnalysis", fields: [workflowRunId], references: [id])
 }

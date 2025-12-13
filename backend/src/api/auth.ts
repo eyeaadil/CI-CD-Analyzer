@@ -67,7 +67,7 @@ router.get('/github/callback', async (req: Request, res: Response) => {
     });
 
     // 4) Issue JWT
-    const token = signJwt({ sub: user.id, username: user.username });
+    const token = signJwt({ sub: String(user.id), username: user.username });
 
     // 5) Redirect back to frontend with token
     const target = `${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}`;
@@ -86,7 +86,7 @@ router.get('/me', async (req: Request, res: Response) => {
     if (!token) return res.status(401).json({ message: 'Missing token' });
 
     const payload = verifyJwt(token);
-    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await prisma.user.findUnique({ where: { id: Number(payload.sub) } });
     if (!user) return res.status(401).json({ message: 'Invalid token' });
     return res.json(user);
   } catch {

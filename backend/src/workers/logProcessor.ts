@@ -8,6 +8,9 @@ import { LogProcessingJobData } from '../queues/logProcessingQueue';
 import { LogParserService } from '../services/logParser';
 import { AIAnalyzerService } from '../services/aiAnalyzer';
 
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 const redisConnection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 });
@@ -78,7 +81,35 @@ const worker = new Worker<LogProcessingJobData>(
       console.log('Suggested Fix:', aiResult.suggestedFix);
       console.log('-----------------------');
 
-      // TODO: Save results to Database (Result + Log URL)
+      // 5. Save results to Database
+      console.log('Saving analysis results to database...');
+
+      // Ensure runId is a string for the DB query (as per schema)
+      const githubRunId = String(runId);
+
+      // Find the workflow run in our DB to get its internal ID
+      const workflowRun = await prisma.workflowRun.findUnique({
+        where: { githubRunId },
+      });
+
+      if (!workflowRun) {
+        console.warn(`WorkflowRun with githubRunId ${githubRunId} not found in DB. Skipping save.`);
+        // In a real scenario, we might want to upsert it or handle this gracefully.
+        return;
+      }
+
+      await prisma.analysisResult.create({
+        data: {
+          workflowRunId: workflowRun.id,
+          rootCause: aiResult.rootCause || 'Unknown',
+          failureStage: aiResult.failureStage || 'Unknown',
+          suggestedFix: aiResult.suggestedFix || 'Unknown',
+          detectedErrors: parsedResult.detectedErrors as any, // Cast to any for JSON
+          steps: parsedResult.steps as any, // Cast to any for JSON
+        },
+      });
+
+      console.log(`Analysis saved for run ${runId}`);
 
 
     } catch (error) {
