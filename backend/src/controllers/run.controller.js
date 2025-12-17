@@ -1,14 +1,13 @@
-import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 export const RunController = {
     // List runs for a specific repo
-    listByRepo: async (req: Request, res: Response) => {
+    listByRepo: async (req, res) => {
         try {
             const { repoId } = req.params;
-            const userId = (req as any).user?.id;
+            const userId = req.user?.id;
 
             if (!userId) {
                 return res.status(401).json({ error: 'Unauthorized' });
@@ -46,10 +45,10 @@ export const RunController = {
     },
 
     // Get detailed analysis for a run
-    getAnalysis: async (req: Request, res: Response) => {
+    getAnalysis: async (req, res) => {
         try {
             const { runId } = req.params;
-            const userId = (req as any).user?.id;
+            const userId = req.user?.id;
 
             if (!userId) {
                 return res.status(401).json({ error: 'Unauthorized' });

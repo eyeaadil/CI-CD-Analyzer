@@ -7,11 +7,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
 // 1. User Model
@@ -46,6 +48,33 @@ model Repo {
   @@index([userId])
 }
 
+// Phase 1: Smart Log Chunking
+model LogChunk {
+  id              Int       @id @default(autoincrement())
+  workflowRunId   Int
+  chunkIndex      Int       // Order of chunks (0-based)
+  stepName        String?   // e.g., "Setup", "Build", "Test"
+  content         String    @db.Text
+  startLine       Int       // Starting line number in original log
+  endLine         Int       // Ending line number in original log
+  tokenCount      Int?      // Approximate token count
+  hasErrors       Boolean   @default(false)
+  errorCount      Int       @default(0)
+  
+  // Phase 2: Embeddings for semantic search
+  embedding       Unsupported("vector(768)")?  // 768-dim vector from Gemini
+  
+  createdAt       DateTime  @default(now())
+  
+  workflowRun     WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  
+  @@unique([workflowRunId, chunkIndex])
+  @@index([workflowRunId])
+  @@index([stepName])
+  @@index([hasErrors])
+}
+
+
 // 3. WorkflowRun Model
 // Stores information about a specific CI/CD workflow run.
 model WorkflowRun {
@@ -65,6 +94,7 @@ model WorkflowRun {
   repo   Repo @relation(fields: [repoId], references: [id])
   
   analysis AnalysisResult? @relation("WorkflowRunAnalysis")
+  chunks   LogChunk[]      // Phase 1: Smart log chunking
 
   @@index([repoId])
 }

@@ -1,19 +1,21 @@
 {
   "name": "ci-cd-analyzer",
   "version": "1.0.0",
+  "type": "module",
   "description": "AI-Driven CI/CD Failure Analyzer",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start:backend": "ts-node backend/src/index.ts",
+    "start:backend": "node backend/src/index.js",
     "start:frontend": "npm run dev --prefix frontend",
-    "start:worker": "ts-node backend/src/workers/logProcessor.ts",
+    "start:worker": "node backend/src/workers/logProcessor.js",
     "prisma:generate": "prisma generate --schema=./backend/prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=./backend/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=./backend/prisma/schema.prisma"
   },
   "keywords": [],
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@octokit/app": "^15.0.1",
     "@octokit/rest": "^21.0.1",
     "@prisma/client": "^5.22.0",
@@ -39,9 +41,7 @@
     "@types/node": "^20.14.9",
     "@types/passport": "^1.0.16",
     "@types/passport-github2": "^1.2.9",
-    "prisma": "^5.17.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.5.2"
+    "prisma": "^5.17.0"
   },
   "author": "",
   "license": "ISC"

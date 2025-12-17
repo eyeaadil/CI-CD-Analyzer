@@ -1,11 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import authRoutes from './routes/auth.routes';
-import webhookRoutes from './routes/webhooks.routes';
-import repoRoutes from './routes/repo.routes';
-import runRoutes from './routes/run.routes';
-import { LogParserService } from './services/logParser';
-import { AIAnalyzerService } from './services/aiAnalyzer';
+import authRoutes from './routes/auth.routes.js';
+import webhookRoutes from './routes/webhooks.routes.js';
+import repoRoutes from './routes/repo.routes.js';
+import runRoutes from './routes/run.routes.js';
+import { LogParserService } from './services/logParser.js';
+import { AIAnalyzerService } from './services/aiAnalyzer.js';
 
 // Load environment variables
 import dotenv from 'dotenv';
@@ -29,7 +29,7 @@ app.use(
 app.use(express.json({
   verify: (req, res, buf) => {
     // Save raw body for webhook signature verification
-    (req as any).rawBody = buf.toString();
+    req.rawBody = buf.toString();
   }
 }));
 app.use(express.text({ type: 'text/plain', limit: '10mb' }));
@@ -60,8 +60,8 @@ app.post('/api/analyze', async (req, res) => {
 
     // 2. Get AI analysis
     const aiResult = await aiAnalyzer.analyzeFailure(
-      parsedResult.steps!,
-      parsedResult.detectedErrors!
+      parsedResult.steps,
+      parsedResult.detectedErrors
     );
 
     // 3. Combine results and send response

@@ -1,10 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
-import { verifyJwt } from '../utils/jwt';
+import { verifyJwt } from '../utils/jwt.js';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+export const authenticate = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -28,7 +27,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
             return res.status(401).json({ error: 'User not found' });
         }
 
-        (req as any).user = user;
+        req.user = user;
         next();
     } catch (error) {
         console.error('Auth middleware error:', error);

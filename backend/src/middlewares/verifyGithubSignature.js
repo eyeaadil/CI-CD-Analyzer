@@ -1,15 +1,14 @@
-import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
-export function verifyGithubSignature(req: Request, res: Response, next: NextFunction) {
-  const signature = req.headers['x-hub-signature-256'] as string;
+export function verifyGithubSignature(req, res, next) {
+  const signature = req.headers['x-hub-signature-256'];
   if (!signature) {
     return res.status(401).send('Signature required');
   }
 
-  const secret = process.env.GITHUB_WEBHOOK_SECRET!;
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
   const hmac = crypto.createHmac('sha256', secret);
-  const rawBody = (req as any).rawBody as string | undefined;
+  const rawBody = req.rawBody;
   if (!rawBody) {
     return res.status(400).send('Request body is missing');
   }

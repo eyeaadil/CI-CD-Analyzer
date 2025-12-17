@@ -5,11 +5,11 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Passport needs to be able to serialize and deserialize users to support persistent login sessions
-passport.serializeUser((user: any, done) => {
+passport.serializeUser((user, done) => {
   done(null, user.id);
 });
 
-passport.deserializeUser(async (id: number, done) => {
+passport.deserializeUser(async (id, done) => {
   try {
     const user = await prisma.user.findUnique({ where: { id } });
     done(null, user);
@@ -22,11 +22,11 @@ passport.deserializeUser(async (id: number, done) => {
 passport.use(
   new GitHubStrategy(
     {
-      clientID: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      clientID: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
       callbackURL: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/auth/github/callback',
     },
-    async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+    async (accessToken, refreshToken, profile, done) => {
       try {
         // Find an existing user or create a new one
         const user = await prisma.user.upsert({

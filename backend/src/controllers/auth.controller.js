@@ -1,24 +1,23 @@
-import { Request, Response } from 'express';
 import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
-import { signJwt, verifyJwt } from '../utils/jwt';
+import { signJwt, verifyJwt } from '../utils/jwt.js';
 
 const prisma = new PrismaClient();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!;
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!;
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const GITHUB_CALLBACK_URL = process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/auth/github/callback';
 
 export const AuthController = {
-  githubLogin: (req: Request, res: Response) => {
+  githubLogin: (req, res) => {
     const scope = encodeURIComponent('read:user user:email repo');
     const redirect = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(GITHUB_CALLBACK_URL)}&scope=${scope}`;
     return res.redirect(302, redirect);
   },
 
-  githubCallback: async (req: Request, res: Response) => {
+  githubCallback: async (req, res) => {
     try {
-      const code = req.query.code as string | undefined;
+      const code = req.query.code;
       if (!code) {
         return res.status(400).send('Missing OAuth code');
       }
@@ -34,7 +33,7 @@ export const AuthController = {
         },
         { headers: { Accept: 'application/json' } }
       );
-      const accessToken = tokenResp.data.access_token as string;
+      const accessToken = tokenResp.data.access_token;
       if (!accessToken) {
         return res.status(401).send('Failed to obtain access token');
       }
@@ -48,7 +47,7 @@ export const AuthController = {
         },
       });
 
-      const gh = ghUserResp.data as { id: number; login: string; avatar_url?: string };
+      const gh = ghUserResp.data;
 
       // Upsert user
       const user = await prisma.user.upsert({
@@ -68,7 +67,7 @@ export const AuthController = {
     }
   },
 
-  me: async (req: Request, res: Response) => {
+  me: async (req, res) => {
     try {
       const auth = req.headers.authorization || '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
@@ -83,7 +82,7 @@ export const AuthController = {
     }
   },
 
-  logout: (_req: Request, res: Response) => {
+  logout: (_req, res) => {
     return res.status(200).json({ message: 'Logged out. Discard token on client.' });
   },
 };

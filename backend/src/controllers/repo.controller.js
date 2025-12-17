@@ -1,13 +1,12 @@
-import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 export const RepoController = {
     // List all repos for the authenticated user
-    list: async (req: Request, res: Response) => {
+    list: async (req, res) => {
         try {
-            const userId = (req as any).user?.id;
+            const userId = req.user?.id;
             if (!userId) {
                 return res.status(401).json({ error: 'Unauthorized' });
             }
@@ -25,7 +24,7 @@ export const RepoController = {
     },
 
     // Sync repos - for MVP we can leave this as a placeholder or basic impl
-    sync: async (req: Request, res: Response) => {
+    sync: async (req, res) => {
         return res.status(501).json({ message: 'Sync not implemented yet' });
     }
 };

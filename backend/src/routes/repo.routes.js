@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { RepoController } from '../controllers/repo.controller';
-import { authenticate } from '../middlewares/auth.middleware';
+import { RepoController } from '../controllers/repo.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
