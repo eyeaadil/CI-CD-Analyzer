@@ -81,13 +81,18 @@ export class LogParserService {
 
       // Workflow step markers
       stepStart: /^={3,}\s*(.+?)\s*={3,}$/,
+
+      // Log file markers from combined logs (e.g., "--- Log File: build-and-test/6_Force CI failure (testing).txt ---")
+      // This is the MOST reliable source of step names
+      logFileMarker: /^---\s*Log File:\s*(.+?\.txt)\s*---$/,
     };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // Check for group start
-      let match = line.match(patterns.groupStart);
+      // Check for log file marker FIRST (highest priority - contains actual step name)
+      // Format: "--- Log File: build-and-test/6_Force CI failure (testing).txt ---"
+      let match = line.match(patterns.logFileMarker);
       if (match) {
         if (currentStep) {
           // Save previous step
@@ -96,16 +101,52 @@ export class LogParserService {
             endLine: i - 1
           });
         }
+        // Extract step name from filename (e.g., "6_Force CI failure (testing).txt" -> "Force CI failure (testing)")
+        const filePath = match[1];
+        const fileName = filePath.split('/').pop(); // Get just the filename
+        // Remove step number prefix and .txt extension
+        const stepName = fileName
+          .replace(/^\d+_/, '')  // Remove leading number and underscore
+          .replace(/\.txt$/, ''); // Remove .txt extension
+
         currentStep = {
-          name: match[1].trim(),
+          name: stepName || fileName,
           startLine: i,
           endLine: i,
+          isFromLogFile: true, // Mark this as coming from log file marker
         };
         continue;
       }
 
+      // Check for group start
+      match = line.match(patterns.groupStart);
+      if (match) {
+        // Only start a new step from ##[group] if we don't have a log file based step
+        // or if the current step is also from ##[group]
+        if (currentStep && !currentStep.isFromLogFile) {
+          // Save previous step
+          steps.push({
+            ...currentStep,
+            endLine: i - 1
+          });
+          currentStep = {
+            name: match[1].trim(),
+            startLine: i,
+            endLine: i,
+          };
+        } else if (!currentStep) {
+          currentStep = {
+            name: match[1].trim(),
+            startLine: i,
+            endLine: i,
+          };
+        }
+        // If currentStep.isFromLogFile, don't replace it - the log file name is more descriptive
+        continue;
+      }
+
       // Check for group end
-      if (line.match(patterns.groupEnd) && currentStep) {
+      if (line.match(patterns.groupEnd) && currentStep && !currentStep.isFromLogFile) {
         steps.push({
           ...currentStep,
           endLine: i
@@ -114,7 +155,7 @@ export class LogParserService {
         continue;
       }
 
-      // Check for run command
+      // Check for run command (only if no current step)
       match = line.match(patterns.runCommand);
       if (match && !currentStep) {
         currentStep = {
@@ -125,7 +166,7 @@ export class LogParserService {
         continue;
       }
 
-      // Check for post step
+      // Check for post step (only if no current step)
       match = line.match(patterns.postStep);
       if (match && !currentStep) {
         currentStep = {
@@ -279,16 +320,25 @@ export class LogParserService {
       { category: 'Runtime Error', pattern: /cannot\s+read\s+property/i, confidence: 'high' },
       { category: 'Runtime Error', pattern: /undefined\s+is\s+not/i, confidence: 'high' },
 
-      // Network/API Errors
+      // Network/API Errors (More specific to prevent false positives)
       { category: 'Network Error', pattern: /ECONNREFUSED/i, confidence: 'high' },
       { category: 'Network Error', pattern: /ETIMEDOUT/i, confidence: 'high' },
       { category: 'Network Error', pattern: /network\s+error/i, confidence: 'medium' },
-      { category: 'API Error', pattern: /HTTP.*40[0-9]/i, confidence: 'medium' },
-      { category: 'API Error', pattern: /HTTP.*50[0-9]/i, confidence: 'high' },
+      // Fixed: Use word boundaries and proper status code ranges to avoid false positives from URLs/dates
+      { category: 'API Error', pattern: /\bHTTP\s+(4[0-9]{2}|5[0-9]{2})\b(?!\.)/i, confidence: 'high' },
+      { category: 'API Error', pattern: /\bstatus\s+code[:\s]+(4[0-9]{2}|5[0-9]{2})\b/i, confidence: 'high' },
 
-      // Exit Codes
+      // GitHub Actions specific errors
+      { category: 'CI Error', pattern: /##\[error\]/i, confidence: 'high' },
+      { category: 'CI Error', pattern: /Error:\s+Process\s+completed\s+with\s+exit\s+code/i, confidence: 'high' },
+
+      // Exit Codes and Process Failures
       { category: 'Process Exit', pattern: /exit\s+code\s+[1-9]\d*/i, confidence: 'high' },
       { category: 'Process Exit', pattern: /command\s+failed/i, confidence: 'medium' },
+      // Detect explicit exit commands with non-zero status (e.g., "exit 1" in shell)
+      { category: 'Exit Failure', pattern: /^\s*exit\s+[1-9]\d*\s*$/i, confidence: 'high' },
+      // Detect bash command failures
+      { category: 'Process Exit', pattern: /exited\s+with\s+code\s+[1-9]\d*/i, confidence: 'high' },
 
       // Generic Errors
       { category: 'Error', pattern: /\bERROR\b/i, confidence: 'medium' },
@@ -299,12 +349,19 @@ export class LogParserService {
     for (const line of lines) {
       for (const { category, pattern, confidence } of errorPatterns) {
         if (pattern.test(line)) {
-          errors.push({
+          const error = {
             category,
             errorMessage: line,
             confidence,
             evidenceLogLines: [line],
-          });
+          };
+
+          // Mark intentional failures for machine-readable classification
+          if (category === 'Exit Failure') {
+            error.isIntentionalFailure = true;
+          }
+
+          errors.push(error);
           break; // One error per line
         }
       }

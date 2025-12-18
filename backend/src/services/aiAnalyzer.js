@@ -8,7 +8,7 @@ export class AIAnalyzerService {
       this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       // Use gemini-2.0-flash (current model)
       this.model = this.genAI.getGenerativeModel({
-        model: "gemini-1.5-flash"
+        model: "gemini-2.5-flash-lite"
       });
       this.useRealAI = true;
       console.log('✅ Google Gemini AI initialized (gemini-1.5-flash)');
@@ -26,8 +26,12 @@ export class AIAnalyzerService {
   /**
    * Analyzes the parsed log data with RAG enhancement
    * Phase 3: Now includes historical context retrieval
+   * @param {Array} steps - Parsed log steps
+   * @param {Array} detectedErrors - Detected errors
+   * @param {Array} chunks - Log chunks for RAG
+   * @param {Object} classificationContext - Optional priority context from classifier
    */
-  async analyzeFailure(steps, detectedErrors, chunks = null) {
+  async analyzeFailure(steps, detectedErrors, chunks = null, classificationContext = null) {
     // Phase 3: Retrieve RAG context if available
     let ragContext = null;
     if (this.useRAG && chunks) {
@@ -42,8 +46,8 @@ export class AIAnalyzerService {
       }
     }
 
-    // Build prompt (with or without RAG context)
-    const basePrompt = this.constructPrompt(steps, detectedErrors);
+    // Build prompt (with or without RAG context and classification)
+    const basePrompt = this.constructPrompt(steps, detectedErrors, classificationContext);
     const prompt = ragContext && ragContext.hasSimilarCases
       ? this.ragService.buildEnhancedPrompt(basePrompt, ragContext)
       : basePrompt;
@@ -152,11 +156,41 @@ export class AIAnalyzerService {
 
   /**
    * Construct a detailed prompt for the AI
+   * @param {Array} steps - Parsed log steps
+   * @param {Array} detectedErrors - Detected errors  
+   * @param {Object} classificationContext - Optional priority context
    */
-  constructPrompt(steps, detectedErrors) {
+  constructPrompt(steps, detectedErrors, classificationContext = null) {
     let prompt = `You are an expert CI/CD troubleshooter. Analyze this build failure and provide a clear, actionable response.
 
-Please respond in this JSON format:
+`;
+
+    // Add priority rules if classification context is provided
+    if (classificationContext) {
+      prompt += `== IMPORTANT FAILURE PRIORITY RULES ==
+
+- Priority 0 (P0): Intentional CI failures (e.g., "exit 1")
+  → These are authoritative. Do NOT attribute failure to other errors.
+
+- Priority 1 (P1): Test failures
+  → Prefer test failure as root cause over lint or warnings.
+
+- Priority 2 (P2): Build / compilation failures
+  → Prefer build errors over runtime or lint issues.
+
+- Priority 4+ (P4+): Lint, warnings, style issues
+  → NEVER treat these as root cause if higher-priority failures exist.
+
+You MUST respect priority ordering when determining root cause.
+
+== Current Failure Context ==
+Failure Type: ${classificationContext.failureType}
+Failure Priority: P${classificationContext.priority}
+
+`;
+    }
+
+    prompt += `Please respond in this JSON format:
 {
   "rootCause": "Brief explanation of what caused the failure",
   "failureStage": "The specific build stage/step that failed",
@@ -167,10 +201,19 @@ Please respond in this JSON format:
 
     prompt += '== Detected Errors ==\n';
     if (detectedErrors && detectedErrors.length > 0) {
-      detectedErrors.forEach(error => {
+      // Sort errors by priority (high confidence first)
+      const sortedErrors = [...detectedErrors].sort((a, b) => {
+        const priorityOrder = { 'high': 0, 'medium': 1, 'low': 2 };
+        return (priorityOrder[a.confidence] || 2) - (priorityOrder[b.confidence] || 2);
+      });
+
+      sortedErrors.forEach(error => {
         prompt += `- Category: ${error.category}\n`;
         prompt += `  Message: ${error.errorMessage}\n`;
         prompt += `  Confidence: ${error.confidence}\n`;
+        if (error.isIntentionalFailure) {
+          prompt += `  ⚠️ INTENTIONAL FAILURE - This is a P0 priority error\n`;
+        }
       });
     } else {
       prompt += 'No specific errors were automatically detected.\n';
@@ -188,6 +231,7 @@ Please respond in this JSON format:
     }
 
     prompt += '\nProvide your analysis in the JSON format specified above. Be concise but thorough.\n';
+    prompt += 'Remember: Respect the priority ordering. Higher priority errors should be the root cause.\n';
 
     return prompt;
   }

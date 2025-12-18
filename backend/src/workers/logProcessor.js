@@ -5,6 +5,7 @@ import axios from 'axios';
 import AdmZip from 'adm-zip';
 import { LogParserService } from '../services/logParser.js';
 import { AIAnalyzerService } from '../services/aiAnalyzer.js';
+import { FailureClassifierService } from '../services/failureClassifier.js';  // Deterministic classifier
 import { EmbeddingService } from '../services/embeddingService.js';  // Phase 2
 import { VectorSearchService } from '../services/vectorSearch.js';  // Phase 2
 import { PrismaClient } from '@prisma/client';
@@ -166,61 +167,115 @@ const worker = new Worker(
       }
       console.log(`✅ Generated embeddings for ${embeddedCount}/${parseResult.chunks.length} chunks`);
 
-      // 6. AI Analysis with RAG (Phase 3)
-      console.log('🤖 Running AI analysis with RAG...');
-
-      // Find chunks with errors for focused analysis
+      // Find chunks with errors
       const errorChunks = parseResult.chunks.filter(c => c.hasErrors);
-      const chunksToAnalyze = errorChunks.length > 0 ? errorChunks : parseResult.chunks.slice(0, 3);
 
-      // Convert chunks to old format for AI analyzer (backward compatible)
+      // Always include the last 2 chunks as they often contain the final exit status/summary
+      const lastChunks = parseResult.chunks.slice(-2);
+
+      // Combine and deduplicate by chunkIndex
+      const uniqueChunkIndices = new Set([
+        ...errorChunks.map(c => c.chunkIndex),
+        ...lastChunks.map(c => c.chunkIndex)
+      ]);
+
+      const chunksToAnalyze = parseResult.chunks.filter(c => uniqueChunkIndices.has(c.chunkIndex));
+
+      // Convert chunks to format for AI analyzer
       const steps = chunksToAnalyze.map(chunk => ({
         id: chunk.chunkIndex,
         name: chunk.stepName,
         logLines: chunk.content.split('\n'),
         duration: 'N/A',
-        status: chunk.hasErrors ? 'failure' : 'unknown',
+        status: chunk.hasErrors ? 'failure' : 'info',
       }));
 
-      // Phase 3: Pass chunks for RAG context
-      const aiResult = await aiAnalyzer.analyzeFailure(
-        steps,
-        parseResult.detectedErrors,
-        parseResult.chunks  // NEW: Pass all chunks for RAG
-      );
+      // 6. DETERMINISTIC CLASSIFICATION (runs BEFORE AI)
+      console.log('🔬 Running deterministic failure classification...');
+      const classifier = new FailureClassifierService();
+      const classification = classifier.classify(parseResult.chunks, parseResult.detectedErrors);
 
-      console.log('--- Analysis Result ---');
-      console.log('Root Cause:', aiResult.rootCause);
-      console.log('Suggested Fix:', aiResult.suggestedFix);
-      if (aiResult.usedRAG) {
-        console.log(`🎯 RAG Enhanced: Found ${aiResult.similarCasesCount} similar past case(s)`);
-        console.log(`📊 Confidence: ${(aiResult.confidence.score * 100).toFixed(0)}% - ${aiResult.confidence.reason}`);
+      console.log(`📊 Classification: ${classification.failureType} (P${classification.priority})`);
+
+      let analysisResult;
+
+      // 7. DECISION: Skip AI or Run AI based on classification
+      if (classification.skipAI) {
+        // INTENTIONAL FAILURE - AI is skipped completely
+        console.log('⚡ Deterministic result - AI SKIPPED');
+        console.log('--- Deterministic Analysis Result ---');
+        console.log('Root Cause:', classification.rootCause);
+        console.log('Failure Stage:', classification.failureStage);
+        console.log('Suggested Fix:', classification.suggestedFix);
+        console.log(`📊 Confidence: ${(classification.confidence.score * 100).toFixed(0)}% - ${classification.confidence.reason}`);
+        console.log('-------------------------------------');
+
+        analysisResult = {
+          rootCause: classification.rootCause,
+          failureStage: classification.failureStage,
+          suggestedFix: classification.suggestedFix,
+          confidence: classification.confidence,
+          usedAI: false,
+          classification: classification.failureType,
+          priority: classification.priority,
+        };
+      } else {
+        // Run AI with classification context
+        console.log('🤖 Running AI analysis with priority context...');
+
+        const classificationContext = {
+          failureType: classification.failureType,
+          priority: classification.priority,
+        };
+
+        // Phase 3: Pass chunks for RAG context + classification context
+        const aiResult = await aiAnalyzer.analyzeFailure(
+          steps,
+          parseResult.detectedErrors,
+          parseResult.chunks,
+          classificationContext  // NEW: Pass classification context
+        );
+
+        console.log('--- AI Analysis Result ---');
+        console.log('Root Cause:', aiResult.rootCause);
+        console.log('Suggested Fix:', aiResult.suggestedFix);
+        if (aiResult.usedRAG) {
+          console.log(`🎯 RAG Enhanced: Found ${aiResult.similarCasesCount} similar past case(s)`);
+        }
+        console.log(`📊 Classification: ${classification.failureType} (P${classification.priority})`);
+        console.log('--------------------------');
+
+        analysisResult = {
+          ...aiResult,
+          usedAI: true,
+          classification: classification.failureType,
+          priority: classification.priority,
+        };
       }
-      console.log('-----------------------');
 
-      // 7. Save analysis results to database
+      // 8. Save analysis results to database
       console.log('💾 Saving analysis results...');
       await prisma.analysisResult.upsert({
         where: { workflowRunId: workflowRun.id },
         update: {
-          rootCause: aiResult.rootCause,
-          failureStage: aiResult.failureStage || 'Unknown',
-          suggestedFix: aiResult.suggestedFix,
+          rootCause: analysisResult.rootCause,
+          failureStage: analysisResult.failureStage || 'Unknown',
+          suggestedFix: analysisResult.suggestedFix,
           detectedErrors: JSON.stringify(parseResult.detectedErrors || []),
           steps: JSON.stringify(steps),
         },
         create: {
           workflowRunId: workflowRun.id,
-          rootCause: aiResult.rootCause,
-          failureStage: aiResult.failureStage || 'Unknown',
-          suggestedFix: aiResult.suggestedFix,
+          rootCause: analysisResult.rootCause,
+          failureStage: analysisResult.failureStage || 'Unknown',
+          suggestedFix: analysisResult.suggestedFix,
           detectedErrors: JSON.stringify(parseResult.detectedErrors || []),
           steps: JSON.stringify(steps),
         },
       });
 
       console.log(`✅ Analysis saved for run ${runId}`);
-      console.log(`📊 Stats: ${parseResult.totalChunks} chunks, ${parseResult.detectedErrors.length} errors`);
+      console.log(`📊 Stats: ${parseResult.totalChunks} chunks, ${parseResult.detectedErrors.length} errors, AI used: ${analysisResult.usedAI}`);
 
     } catch (error) {
       console.error(`Failed to process job for run ID ${runId}:`, error);

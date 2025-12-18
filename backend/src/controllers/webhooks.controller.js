@@ -85,13 +85,19 @@ export const WebhooksController = {
         // ----------------------------
         // 2️⃣ Enqueue log processing job
         // ----------------------------
+        // Use unique jobId with timestamp to allow re-processing of same run ID
+        const jobId = `${run.id}-${Date.now()}`;
         await logProcessingQueue.add('log-processing', {
           repoFullName: repo.full_name,
           runId: run.id,
           installationId: installation.id,
+        }, {
+          jobId: jobId,  // Unique ID prevents deduplication
+          removeOnComplete: 100,  // Keep last 100 completed jobs
+          removeOnFail: 50,       // Keep last 50 failed jobs
         });
 
-        console.log('🚀 Job queued for run:', githubRunId);
+        console.log('🚀 Job queued for run:', githubRunId, '(jobId:', jobId, ')');
 
       } catch (err) {
         console.error('❌ Webhook processing failed:', err);
