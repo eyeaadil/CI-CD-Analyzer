@@ -4,6 +4,11 @@ import authRoutes from './routes/auth.routes.js';
 import webhookRoutes from './routes/webhooks.routes.js';
 import repoRoutes from './routes/repo.routes.js';
 import runRoutes from './routes/run.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import analyticsRoutes from './routes/analytics.routes.js';
+import userRoutes from './routes/user.routes.js';
+import insightsRoutes from './routes/insights.routes.js';
+import incidentsRoutes from './routes/incidents.routes.js';
 import { LogParserService } from './services/logParser.js';
 import { AIAnalyzerService } from './services/aiAnalyzer.js';
 
@@ -15,10 +20,19 @@ const app = express();
 const port = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// 1. CORS for frontend
+// 1. CORS for frontend (support multiple origins for development)
+const allowedOrigins = [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'];
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, true); // Allow all in development
+    },
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
@@ -39,6 +53,13 @@ app.use('/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/repos', repoRoutes);
 app.use('/api/runs', runRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/insights', insightsRoutes);
+app.use('/api/incidents', incidentsRoutes);
+
+console.log('API ROUTES LOADED: /api/dashboard, /api/analytics, /api/user, /api/repos, /api/runs, /api/insights, /api/incidents');
 
 app.get('/', (req, res) => {
   res.send('CI/CD Analyzer Backend is running.');

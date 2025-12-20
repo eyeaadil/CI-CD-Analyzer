@@ -26,10 +26,27 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  repos Repo[]
+  repos    Repo[]
+  settings UserSettings?
 }
 
-// 2. Repo Model
+// 2. User Settings Model
+// Stores user preferences and notification settings.
+model UserSettings {
+  id              Int      @id @default(autoincrement())
+  theme           String   @default("dark")    // dark, light
+  emailDigest     String   @default("weekly")  // daily, weekly, none
+  slackWebhook    String?
+  notifyOnFailure Boolean  @default(true)
+  notifyOnSuccess Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id])
+}
+
+// 3. Repo Model
 // Stores information about repositories onboarded by users.
 model Repo {
   id        Int      @id @default(autoincrement())
@@ -75,7 +92,7 @@ model LogChunk {
 }
 
 
-// 3. WorkflowRun Model
+// 4. WorkflowRun Model
 // Stores information about a specific CI/CD workflow run.
 model WorkflowRun {
   id            Int      @id @default(autoincrement())
@@ -97,16 +114,23 @@ model WorkflowRun {
   chunks   LogChunk[]      // Phase 1: Smart log chunking
 
   @@index([repoId])
+  @@index([status])
+  @@index([createdAt])
 }
 
-// 4. AnalysisResult Model
+// 5. AnalysisResult Model
 // Stores the output of the AI log analysis.
 model AnalysisResult {
   id            Int      @id @default(autoincrement())
   
-  rootCause     String
+  rootCause     String   @db.Text
   failureStage  String
-  suggestedFix  String
+  suggestedFix  String   @db.Text
+  
+  // Classification data
+  priority      Int?     // P0-P5 priority level
+  failureType   String?  // INTENTIONAL, TEST, BUILD, RUNTIME, INFRA, LINT
+  usedAI        Boolean  @default(true)
   
   detectedErrors Json?   // Storing DetectedError[] as JSON
   steps          Json?   // Storing LogStep[] as JSON for detailed view
@@ -116,3 +140,4 @@ model AnalysisResult {
   workflowRunId Int @unique
   workflowRun   WorkflowRun @relation("WorkflowRunAnalysis", fields: [workflowRunId], references: [id])
 }
+

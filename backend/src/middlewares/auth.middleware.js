@@ -34,3 +34,7 @@ export const authenticate = async (req, res, next) => {
         return res.status(401).json({ error: 'Authentication failed' });
     }
 };
+
+// Alias for routes that use authMiddleware
+export const authMiddleware = authenticate;
+
