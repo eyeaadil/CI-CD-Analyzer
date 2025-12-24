@@ -159,47 +159,30 @@ export class AIAnalyzerService {
    * @param {Array} steps - Parsed log steps
    * @param {Array} detectedErrors - Detected errors  
    * @param {Object} classificationContext - Optional priority context
+   * @param {Object} ragContext - Optional RAG context for historical grounding
    */
-  constructPrompt(steps, detectedErrors, classificationContext = null) {
-    let prompt = `You are an expert CI/CD troubleshooter. Analyze this build failure and provide a clear, actionable response.
+  constructPrompt(steps, detectedErrors, classificationContext = null, ragContext = null) {
+    // ============================================
+    // SECTION 1: STRICT OUTPUT RULES (Top Priority)
+    // ============================================
+    let prompt = `IMPORTANT OUTPUT RULES:
+- Respond with ONLY valid JSON
+- Do NOT include explanations, markdown, or extra text
+- Do NOT wrap JSON in code blocks
+- The response MUST start with '{' and end with '}'
+- If you are unsure, still return JSON using your best judgment
+
+You are an expert CI/CD troubleshooter analyzing a build failure.
 
 `;
 
-    // Add priority rules if classification context is provided
-    if (classificationContext) {
-      prompt += `== IMPORTANT FAILURE PRIORITY RULES ==
-
-- Priority 0 (P0): Intentional CI failures (e.g., "exit 1")
-  → These are authoritative. Do NOT attribute failure to other errors.
-
-- Priority 1 (P1): Test failures
-  → Prefer test failure as root cause over lint or warnings.
-
-- Priority 2 (P2): Build / compilation failures
-  → Prefer build errors over runtime or lint issues.
-
-- Priority 4+ (P4+): Lint, warnings, style issues
-  → NEVER treat these as root cause if higher-priority failures exist.
-
-You MUST respect priority ordering when determining root cause.
-
-== Current Failure Context ==
-Failure Type: ${classificationContext.failureType}
-Failure Priority: P${classificationContext.priority}
+    // ============================================
+    // SECTION 2: PRIMARY ERROR SIGNALS (Authoritative)
+    // ============================================
+    prompt += `== PRIMARY ERROR SIGNALS (AUTHORITATIVE) ==
+These errors were extracted deterministically and are TRUSTED. Base your analysis primarily on these.
 
 `;
-    }
-
-    prompt += `Please respond in this JSON format:
-{
-  "rootCause": "Brief explanation of what caused the failure",
-  "failureStage": "The specific build stage/step that failed",
-  "suggestedFix": "Clear, actionable steps to fix the issue (include commands if applicable)"
-}
-
-`;
-
-    prompt += '== Detected Errors ==\n';
     if (detectedErrors && detectedErrors.length > 0) {
       // Sort errors by priority (high confidence first)
       const sortedErrors = [...detectedErrors].sort((a, b) => {
@@ -208,31 +191,238 @@ Failure Priority: P${classificationContext.priority}
       });
 
       sortedErrors.forEach(error => {
-        prompt += `- Category: ${error.category}\n`;
-        prompt += `  Message: ${error.errorMessage}\n`;
-        prompt += `  Confidence: ${error.confidence}\n`;
+        prompt += `• [${error.confidence?.toUpperCase() || 'MEDIUM'}] ${error.category}: ${error.errorMessage}\n`;
         if (error.isIntentionalFailure) {
-          prompt += `  ⚠️ INTENTIONAL FAILURE - This is a P0 priority error\n`;
+          prompt += `  ⚠️ INTENTIONAL FAILURE - This is P0 priority, MUST be the root cause\n`;
         }
       });
     } else {
-      prompt += 'No specific errors were automatically detected.\n';
+      prompt += 'No specific errors were automatically detected. Analyze logs for clues.\n';
     }
 
-    prompt += '\n== Log Steps ==\n';
+    // ============================================
+    // SECTION 3: PRIORITY ENFORCEMENT (Critical)
+    // ============================================
+    prompt += `
+== FAILURE PRIORITY RULES (MUST FOLLOW) ==
+
+Priority Hierarchy (highest to lowest):
+- P0: Intentional failures (exit 1) → ALWAYS the root cause, ignore everything else
+- P1: Test failures → Prefer over lint/warnings
+- P2: Build/compile errors → Prefer over runtime/lint
+- P3: Runtime errors → Prefer over dependencies/lint
+- P4-P7: Infrastructure, security, timeout, dependency issues
+- P8-P10: Config, permission, lint/warnings → NEVER root cause if higher exists
+
+BEFORE determining rootCause, you MUST:
+1. Identify the HIGHEST priority error present
+2. Explicitly IGNORE all lower-priority issues
+3. Base the rootCause ONLY on the highest-priority failure
+
+`;
+
+    if (classificationContext) {
+      prompt += `CURRENT FAILURE CONTEXT:
+- Detected Type: ${classificationContext.failureType}
+- Priority Level: P${classificationContext.priority}
+- Your analysis MUST align with this classification
+
+`;
+    }
+
+    // ============================================
+    // SECTION 4: RAG GROUNDING RULES (If Present)
+    // ============================================
+    if (ragContext && ragContext.hasSimilarCases) {
+      prompt += `== HISTORICAL CONTEXT (RAG) ==
+Similar failures have been seen before. Use this context wisely.
+
+RAG RULES:
+- PREFER historical fixes over speculation
+- Do NOT invent fixes that contradict past resolutions
+- If multiple fixes exist, choose the most frequently successful one
+- If RAG context contradicts detected errors, DETECTED ERRORS WIN
+
+Similar Cases Found: ${ragContext.similarCases?.length || 0}
+
+`;
+    }
+
+    // ============================================
+    // SECTION 5: REQUIRED OUTPUT FORMAT
+    // ============================================
+    prompt += `== REQUIRED JSON OUTPUT FORMAT ==
+{
+  "rootCause": "Brief, specific explanation of what caused the failure (1-2 sentences)",
+  "failureStage": "The exact build stage/step name that failed",
+  "suggestedFix": "Clear, actionable steps to fix the issue. Include commands if applicable."
+}
+
+`;
+
+    // ============================================
+    // SECTION 6: SUPPORTING LOG EVIDENCE (Secondary)
+    // ============================================
+    prompt += `== SUPPORTING LOG EVIDENCE ==
+These logs SUPPORT the errors above. Do NOT let verbose logs override the primary error signals.
+
+`;
     if (steps && steps.length > 0) {
       steps.forEach(step => {
         prompt += `--- Step: ${step.name} (Status: ${step.status}) ---\n`;
-        // Include last 50 lines of each step to avoid token limits
-        const logSample = step.logLines.slice(-50).join('\n');
+        // Include last 30 lines to reduce noise
+        const logSample = step.logLines.slice(-30).join('\n');
         prompt += logSample;
         prompt += '\n--------------------\n';
       });
     }
 
-    prompt += '\nProvide your analysis in the JSON format specified above. Be concise but thorough.\n';
-    prompt += 'Remember: Respect the priority ordering. Higher priority errors should be the root cause.\n';
+    // ============================================
+    // SECTION 7: FINAL INSTRUCTIONS
+    // ============================================
+    prompt += `
+== FINAL INSTRUCTIONS ==
+1. Respond with ONLY the JSON object, nothing else
+2. The highest-priority error MUST be the rootCause
+3. Be specific about the failure stage name
+4. Provide actionable fix steps (include commands when helpful)
+5. Start your response with '{' and end with '}'
+`;
 
     return prompt;
+  }
+
+  /**
+   * Classify failure type using AI when deterministic classifier returns UNKNOWN
+   * @param {Array} chunks - Log chunks
+   * @param {Array} detectedErrors - Detected errors
+   * @returns {Object} Classification result with suggested type
+   */
+  async classifyWithAI(chunks, detectedErrors) {
+    if (!this.useRealAI) {
+      return {
+        failureType: 'UNKNOWN',
+        priority: 99,
+        confidence: { score: 0.0, reason: 'AI not available' }
+      };
+    }
+
+    const categories = [
+      'TEST - Test failures (Jest, Mocha, Vitest, Cypress, Playwright)',
+      'BUILD - Compilation/build errors (TypeScript, Webpack, Babel, Vite)',
+      'RUNTIME - Runtime errors (TypeError, ReferenceError, exceptions)',
+      'INFRA - Infrastructure issues (Docker, Kubernetes, network, database)',
+      'SECURITY - Security vulnerabilities, auth failures, secret issues',
+      'TIMEOUT - Timeout or deadline exceeded (any timeout)',
+      'DEPENDENCY - Package/dependency issues (npm, yarn, pnpm, resolution)',
+      'CONFIG - Configuration or environment variable issues',
+      'PERMISSION - Permission or access denied errors (EACCES, EPERM)',
+      'LINT - Linting, formatting, or code style warnings (ESLint, Prettier)'
+    ];
+
+    const errorSummary = detectedErrors.slice(0, 5).map(e =>
+      `• [${e.confidence?.toUpperCase() || 'MEDIUM'}] ${e.category}: ${e.errorMessage?.substring(0, 150)}`
+    ).join('\n');
+
+    const chunkSummary = chunks
+      .filter(c => c.hasErrors)
+      .slice(0, 2)
+      .map(c => `Step: ${c.stepName}\n${c.content.substring(0, 300)}`)
+      .join('\n---\n');
+
+    const prompt = `STRICT OUTPUT RULES:
+- Respond with ONLY valid JSON, nothing else
+- Do NOT include explanations or markdown
+- Start with '{' and end with '}'
+
+You are a CI/CD failure classifier. Classify this failure into ONE category.
+
+== AVAILABLE CATEGORIES (with priority) ==
+Priority 1-2 (Critical):
+${categories.slice(0, 2).join('\n')}
+
+Priority 3-5 (High):
+${categories.slice(2, 5).join('\n')}
+
+Priority 6-8 (Medium):
+${categories.slice(5, 8).join('\n')}
+
+Priority 9-10 (Low):
+${categories.slice(8).join('\n')}
+
+== DETECTED ERRORS (Primary Signal) ==
+${errorSummary || 'No specific errors detected'}
+
+== LOG EXCERPTS (Supporting Evidence) ==
+${chunkSummary || 'No error chunks available'}
+
+== REQUIRED JSON OUTPUT ==
+{
+  "failureType": "CATEGORY_NAME",
+  "priority": <number 1-10>,
+  "confidence": <decimal 0.0 to 1.0>,
+  "reason": "Brief explanation (1 sentence)"
+}
+
+== RULES ==
+1. PREFER existing categories - only create NEW if absolutely none fit
+2. If creating new: SHORT name (1-2 words), UPPERCASE, underscores only
+3. Priority must match category type (TEST=1, BUILD=2, RUNTIME=3, etc.)
+4. Use UNKNOWN only as last resort
+5. Respond with ONLY the JSON object, nothing else`;
+
+    try {
+      console.log('🤖 AI classifying unknown failure...');
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+
+      // Parse JSON response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+
+        // Normalize the category name: UPPERCASE, replace spaces with underscores
+        let failureType = (parsed.failureType || 'UNKNOWN')
+          .toUpperCase()
+          .trim()
+          .replace(/\s+/g, '_')
+          .replace(/[^A-Z0-9_]/g, '');
+
+        // Ensure it's not empty
+        if (!failureType || failureType.length === 0) {
+          failureType = 'UNKNOWN';
+        }
+
+        // Log if it's a new category
+        const knownTypes = ['TEST', 'BUILD', 'RUNTIME', 'INFRA', 'SECURITY',
+          'TIMEOUT', 'DEPENDENCY', 'CONFIG', 'PERMISSION', 'LINT', 'UNKNOWN', 'INTENTIONAL'];
+
+        if (!knownTypes.includes(failureType)) {
+          console.log(`🆕 AI suggested NEW category: ${failureType}`);
+        } else {
+          console.log(`✅ AI classified as: ${failureType}`);
+        }
+
+        return {
+          failureType,
+          priority: parsed.priority || 99,
+          confidence: {
+            score: parsed.confidence || 0.5,
+            reason: parsed.reason || 'AI classification'
+          },
+          aiClassified: true,
+          isNewCategory: !knownTypes.includes(failureType)
+        };
+      }
+    } catch (error) {
+      console.error('❌ AI classification error:', error.message);
+    }
+
+    return {
+      failureType: 'UNKNOWN',
+      priority: 99,
+      confidence: { score: 0.0, reason: 'AI classification failed' }
+    };
   }
 }

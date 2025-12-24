@@ -1,3 +1,7 @@
+// Import config FIRST to load env vars
+import './config.js';
+
+// Now import everything else
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes.js';
@@ -12,92 +16,86 @@ import incidentsRoutes from './routes/incidents.routes.js';
 import { LogParserService } from './services/logParser.js';
 import { AIAnalyzerService } from './services/aiAnalyzer.js';
 
-// Load environment variables
-import dotenv from 'dotenv';
-dotenv.config();
-
 const app = express();
 const port = process.env.PORT || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:8080';
 
-// 1. CORS for frontend (support multiple origins for development)
-const allowedOrigins = [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173'];
+// 1. CORS for frontend
+const allowedOrigins = [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080'];
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
       }
-      return callback(null, true); // Allow all in development
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
-// 2. Body parsers
-// Custom JSON parser that also saves the raw body for webhook signature verification
+// 2. Body parsers - with rawBody capture for webhook signature verification
 app.use(express.json({
+  limit: '50mb',
   verify: (req, res, buf) => {
-    // Save raw body for webhook signature verification
-    req.rawBody = buf.toString();
+    // Store raw body for GitHub webhook signature verification
+    req.rawBody = buf;
   }
 }));
-app.use(express.text({ type: 'text/plain', limit: '10mb' }));
 
-// 3. API Routes
+// 3. Health check
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+app.get('/', (req, res) => res.status(200).json({ message: 'CI/CD Failure Analyzer API' }));
+
+// 4. Auth and webhook routes
 app.use('/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
-app.use('/api/repos', repoRoutes);
-app.use('/api/runs', runRoutes);
+console.log('WEBHOOKS ROUTES LOADED');
+
+// 5. API routes
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/repos', repoRoutes);
+app.use('/api/runs', runRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/incidents', incidentsRoutes);
-
 console.log('API ROUTES LOADED: /api/dashboard, /api/analytics, /api/user, /api/repos, /api/runs, /api/insights, /api/incidents');
 
-app.get('/', (req, res) => {
-  res.send('CI/CD Analyzer Backend is running.');
-});
+// 6. Global log analysis endpoint
+const logParser = new LogParserService();
+const aiAnalyzer = new AIAnalyzerService();
 
-// The main analysis endpoint
 app.post('/api/analyze', async (req, res) => {
   try {
-    const rawLog = req.body;
-    if (typeof rawLog !== 'string' || rawLog.length === 0) {
-      return res.status(400).json({ error: 'Request body must be a non-empty string of raw logs.' });
+    const { rawLog, context } = req.body;
+    if (!rawLog) {
+      return res.status(400).json({ error: 'rawLog is required' });
     }
-
-    const logParser = new LogParserService();
-    const aiAnalyzer = new AIAnalyzerService();
-
-    // 1. Parse the log
-    const parsedResult = logParser.parse(rawLog);
-
-    // 2. Get AI analysis
-    const aiResult = await aiAnalyzer.analyzeFailure(
-      parsedResult.steps,
-      parsedResult.detectedErrors
-    );
-
-    // 3. Combine results and send response
-    const finalAnalysis = {
-      ...parsedResult,
-      ...aiResult,
-    };
-
-    res.json(finalAnalysis);
-  } catch (error) {
-    console.error('Error during analysis:', error);
-    res.status(500).json({ error: 'An internal server error occurred.' });
+    const parsedLog = logParser.parse(rawLog);
+    const analysis = await aiAnalyzer.analyze(parsedLog, context || {});
+    return res.json({ success: true, parsed: parsedLog, analysis });
+  } catch (err) {
+    console.error('Analysis error:', err);
+    return res.status(500).json({ error: 'Analysis failed', message: err.message });
   }
 });
 
+// 7. Global 404 handler
+app.use((req, res) => {
+  console.log('404 Not Found:', req.method, req.url);
+  res.status(404).json({ error: 'Not Found', path: req.url });
+});
+
+// 8. Global error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'Internal Server Error' });
+});
+
+// Start server
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });

@@ -59,11 +59,20 @@ router.get('/github/callback', async (req, res) => {
 
     const gh = ghUserResp.data;
 
-    // 3) Upsert local user via Prisma
+    // 3) Upsert local user via Prisma (store access token for repo sync)
     const user = await prisma.user.upsert({
       where: { githubId: String(gh.id) },
-      update: { username: gh.login, avatarUrl: gh.avatar_url },
-      create: { githubId: String(gh.id), username: gh.login, avatarUrl: gh.avatar_url },
+      update: {
+        username: gh.login,
+        avatarUrl: gh.avatar_url,
+        githubAccessToken: accessToken  // Store token for repo access
+      },
+      create: {
+        githubId: String(gh.id),
+        username: gh.login,
+        avatarUrl: gh.avatar_url,
+        githubAccessToken: accessToken  // Store token for repo access
+      },
     });
 
     // 4) Issue JWT

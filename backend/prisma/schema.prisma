@@ -17,14 +17,21 @@ datasource db {
 }
 
 // 1. User Model
-// Stores user information, authenticated via GitHub.
+// Stores user information, authenticated via GitHub OR Email.
 model User {
-  id        Int      @id @default(autoincrement())
-  githubId  String   @unique
-  username  String
-  avatarUrl String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  // GitHub OAuth fields (optional for email users)
+  githubId     String?  @unique
+  githubAccessToken String?  // OAuth token for GitHub API access
+  // Email auth fields (optional for GitHub users)
+  email        String?  @unique
+  passwordHash String?
+  name         String?
+  // Shared fields
+  username     String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   repos    Repo[]
   settings UserSettings?

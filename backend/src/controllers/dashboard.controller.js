@@ -124,7 +124,8 @@ export const DashboardController = {
                             rootCause: true,
                             failureStage: true,
                             priority: true,
-                            failureType: true
+                            failureType: true,
+                            suggestedFix: true
                         }
                     }
                 }
@@ -145,10 +146,11 @@ export const DashboardController = {
                     fullName: `${run.repo.owner}/${run.repo.name}`
                 },
                 analysis: run.analysis ? {
-                    rootCause: run.analysis.rootCause.substring(0, 150) + (run.analysis.rootCause.length > 150 ? '...' : ''),
+                    rootCause: run.analysis.rootCause,
                     failureStage: run.analysis.failureStage,
                     priority: run.analysis.priority,
-                    failureType: run.analysis.failureType
+                    failureType: run.analysis.failureType,
+                    suggestedFix: run.analysis.suggestedFix
                 } : null
             })));
         } catch (error) {

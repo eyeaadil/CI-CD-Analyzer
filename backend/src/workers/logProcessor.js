@@ -220,12 +220,33 @@ const worker = new Worker(
           priority: classification.priority,
         };
       } else {
-        // Run AI with classification context
+        // Check if we need AI to classify the failure type
+        let finalClassification = classification;
+
+        if (classification.needsAIClassification || classification.failureType === 'UNKNOWN') {
+          console.log('🤖 Deterministic classifier returned UNKNOWN - asking AI for category...');
+          const aiClassification = await aiAnalyzer.classifyWithAI(
+            parseResult.chunks,
+            parseResult.detectedErrors
+          );
+
+          if (aiClassification.failureType !== 'UNKNOWN') {
+            console.log(`✅ AI suggested category: ${aiClassification.failureType} (P${aiClassification.priority})`);
+            finalClassification = {
+              ...classification,
+              failureType: aiClassification.failureType,
+              priority: aiClassification.priority,
+              confidence: aiClassification.confidence,
+            };
+          }
+        }
+
+        // Run AI analysis with classification context
         console.log('🤖 Running AI analysis with priority context...');
 
         const classificationContext = {
-          failureType: classification.failureType,
-          priority: classification.priority,
+          failureType: finalClassification.failureType,
+          priority: finalClassification.priority,
         };
 
         // Phase 3: Pass chunks for RAG context + classification context
@@ -242,14 +263,14 @@ const worker = new Worker(
         if (aiResult.usedRAG) {
           console.log(`🎯 RAG Enhanced: Found ${aiResult.similarCasesCount} similar past case(s)`);
         }
-        console.log(`📊 Classification: ${classification.failureType} (P${classification.priority})`);
+        console.log(`📊 Classification: ${finalClassification.failureType} (P${finalClassification.priority})`);
         console.log('--------------------------');
 
         analysisResult = {
           ...aiResult,
           usedAI: true,
-          classification: classification.failureType,
-          priority: classification.priority,
+          classification: finalClassification.failureType,
+          priority: finalClassification.priority,
         };
       }
 
