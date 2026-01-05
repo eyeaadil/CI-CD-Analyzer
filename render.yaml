@@ -1,0 +1,73 @@
+# Render Blueprint - Infrastructure as Code
+# Deploy all services with: render.com/deploy
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API - Web Service
+  - type: web
+    name: cicd-analyzer-api
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npx prisma generate --schema=./backend/prisma/schema.prisma
+    startCommand: npm run start:backend
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false  # Set manually in dashboard
+      - key: REDIS_URL
+        fromService:
+          name: cicd-analyzer-redis
+          type: redis
+          property: connectionString
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CALLBACK_URL
+        sync: false
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_PRIVATE_KEY
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  # Background Worker - Log Processor
+  - type: worker
+    name: cicd-analyzer-worker
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npx prisma generate --schema=./backend/prisma/schema.prisma
+    startCommand: npm run start:worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: cicd-analyzer-redis
+          type: redis
+          property: connectionString
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_PRIVATE_KEY
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+
+databases:
+  # Redis for BullMQ job queue
+  - name: cicd-analyzer-redis
+    plan: free
+    ipAllowList: []  # Allow all internal services
