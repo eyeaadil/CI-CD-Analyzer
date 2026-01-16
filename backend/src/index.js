@@ -1,6 +1,10 @@
 // Import config FIRST to load env vars
 import './config.js';
 
+// Import worker to run in same process (for free hosting)
+// This starts the BullMQ worker alongside the API
+import './workers/logProcessor.js';
+
 // Now import everything else
 import express from 'express';
 import cors from 'cors';
