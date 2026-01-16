@@ -10,7 +10,10 @@ const envPath = path.resolve(__dirname, '../../.env');
 // Load and verify
 const result = dotenv.config({ path: envPath });
 if (result.error) {
-    console.error('❌ Failed to load .env:', result.error);
+    // Only warn if not in production (Render injects env vars directly)
+    if (process.env.NODE_ENV !== 'production') {
+        console.warn('⚠️  .env file not found, using environment variables directly');
+    }
 } else {
     console.log('✅ .env loaded from:', envPath);
 }
