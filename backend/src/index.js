@@ -25,7 +25,14 @@ const port = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:8080';
 
 // 1. CORS for frontend
-const allowedOrigins = [FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080'];
+const allowedOrigins = [
+  FRONTEND_URL,
+  'https://ci-cd-analyzer-frontend.vercel.app',  // Production Vercel
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080'
+];
+console.log('CORS allowed origins:', allowedOrigins);
 app.use(
   cors({
     origin: (origin, callback) => {
