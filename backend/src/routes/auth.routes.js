@@ -3,10 +3,14 @@ import { AuthController } from '../controllers/auth.controller.js';
 
 const router = Router();
 
-// GitHub OAuth
+// GitHub OAuth (for login/signup)
 router.get('/github/login', AuthController.githubLogin);
 router.get('/github', AuthController.githubLogin); // backward compat
 router.get('/github/callback', AuthController.githubCallback);
+
+// GitHub Account Linking (for email users to connect GitHub)
+// Uses same callback URL, but with state parameter to differentiate
+router.get('/github/link', AuthController.githubLink);
 
 // Email/Password Auth
 router.post('/signup', AuthController.signup);

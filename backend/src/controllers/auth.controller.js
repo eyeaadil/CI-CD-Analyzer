@@ -33,9 +33,23 @@ export const AuthController = {
 
   githubCallback: async (req, res) => {
     try {
-      const code = req.query.code;
+      const { code, state } = req.query;
       if (!code) {
         return res.redirect(`${FRONTEND_URL}/login?error=Missing OAuth code`);
+      }
+
+      // Check if this is an account linking request (has state with userId)
+      let linkUserId = null;
+      if (state) {
+        try {
+          const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf-8'));
+          if (stateData.action === 'link' && stateData.userId) {
+            linkUserId = stateData.userId;
+            console.log(`🔗 Account linking request for user ID: ${linkUserId}`);
+          }
+        } catch {
+          // Invalid state, continue with normal login flow
+        }
       }
 
       // Exchange code for access token
@@ -51,7 +65,8 @@ export const AuthController = {
       );
       const accessToken = tokenResp.data.access_token;
       if (!accessToken) {
-        return res.redirect(`${FRONTEND_URL}/login?error=Failed to get access token`);
+        const errorRedirect = linkUserId ? `${FRONTEND_URL}/repositories` : `${FRONTEND_URL}/login`;
+        return res.redirect(`${errorRedirect}?error=Failed to get access token`);
       }
 
       // Fetch user profile
@@ -65,6 +80,35 @@ export const AuthController = {
 
       const gh = ghUserResp.data;
 
+      // ========== ACCOUNT LINKING FLOW ==========
+      if (linkUserId) {
+        // Check if this GitHub account is already linked to another user
+        const existingGithubUser = await prisma.user.findFirst({
+          where: { githubId: String(gh.id) }
+        });
+
+        if (existingGithubUser && existingGithubUser.id !== parseInt(linkUserId)) {
+          return res.redirect(`${FRONTEND_URL}/repositories?error=This GitHub account is already linked to another user`);
+        }
+
+        // Update the existing user with GitHub credentials
+        const updatedUser = await prisma.user.update({
+          where: { id: parseInt(linkUserId) },
+          data: {
+            githubId: String(gh.id),
+            githubAccessToken: accessToken,
+            avatarUrl: gh.avatar_url || undefined,
+          },
+        });
+
+        console.log(`✅ GitHub account linked: User ${linkUserId} now connected to GitHub @${gh.login}`);
+
+        // Issue new JWT with updated info
+        const token = signJwt({ sub: String(updatedUser.id), username: updatedUser.username });
+        return res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}&linked=true`);
+      }
+
+      // ========== NORMAL LOGIN/SIGNUP FLOW ==========
       // Upsert user (including GitHub access token for API calls)
       const user = await prisma.user.upsert({
         where: { githubId: String(gh.id) },
@@ -88,6 +132,40 @@ export const AuthController = {
     } catch (err) {
       console.error('GitHub OAuth callback error:', err);
       return res.redirect(`${FRONTEND_URL}/login?error=OAuth failed`);
+    }
+  },
+
+  // ================================
+  // GitHub Account Linking (for email users)
+  // ================================
+  
+  /**
+   * Initiate GitHub linking for an existing logged-in user
+   * Uses state parameter to pass user ID to callback
+   */
+  githubLink: (req, res) => {
+    // Get the user ID from the token (passed as query param)
+    const { token } = req.query;
+    if (!token) {
+      return res.redirect(`${FRONTEND_URL}/repositories?error=Missing authentication`);
+    }
+
+    try {
+      const payload = verifyJwt(token);
+      const userId = payload.sub;
+      
+      // Create state with user ID (will be returned in callback)
+      // The callback uses this to know it's an account linking request
+      const state = Buffer.from(JSON.stringify({ userId, action: 'link' })).toString('base64');
+      
+      const scope = encodeURIComponent('read:user user:email repo');
+      // Use the SAME callback URL - the state parameter differentiates the flow
+      const redirect = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(GITHUB_CALLBACK_URL)}&scope=${scope}&state=${state}`;
+      console.log(`🔗 Initiating GitHub linking for user ID: ${userId}`);
+      return res.redirect(302, redirect);
+    } catch (err) {
+      console.error('GitHub link error:', err);
+      return res.redirect(`${FRONTEND_URL}/repositories?error=Invalid token`);
     }
   },
 
