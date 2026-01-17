@@ -300,26 +300,39 @@ export const RepoController = {
                     continue;
                 }
 
-                // Check if repo already exists
+                // Check if repo already exists (for any user)
                 const existing = await prisma.repo.findFirst({
-                    where: {
-                        githubId: String(ghRepo.githubId),
-                        userId: Number(userId)
-                    }
+                    where: { githubId: String(ghRepo.githubId) }
                 });
 
                 if (existing) {
-                    // Update existing repo
-                    await prisma.repo.update({
-                        where: { id: existing.id },
-                        data: {
-                            name: ghRepo.name,
-                            owner: ghRepo.owner,
-                            isPrivate: ghRepo.isPrivate ?? false,
-                            updatedAt: new Date()
-                        }
-                    });
-                    skipped++;
+                    if (existing.userId === Number(userId)) {
+                        // Already belongs to this user, update it
+                        await prisma.repo.update({
+                            where: { id: existing.id },
+                            data: {
+                                name: ghRepo.name,
+                                owner: ghRepo.owner,
+                                isPrivate: ghRepo.isPrivate ?? false,
+                                updatedAt: new Date()
+                            }
+                        });
+                        skipped++;
+                    } else {
+                        // Belongs to another user, transfer ownership (for re-linked GitHub accounts)
+                        await prisma.repo.update({
+                            where: { id: existing.id },
+                            data: {
+                                userId: Number(userId),
+                                name: ghRepo.name,
+                                owner: ghRepo.owner,
+                                isPrivate: ghRepo.isPrivate ?? false,
+                                updatedAt: new Date()
+                            }
+                        });
+                        console.log(`📦 Transferred repo ${ghRepo.name} from User ${existing.userId} to User ${userId}`);
+                        synced++;
+                    }
                 } else {
                     // Create new repo
                     await prisma.repo.create({
