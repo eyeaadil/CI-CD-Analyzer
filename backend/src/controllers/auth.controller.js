@@ -110,8 +110,7 @@ export const AuthController = {
           data: {
             githubId: String(gh.id),
             githubAccessToken: accessToken,
-            // Only set avatar if user doesn't have one
-            ...(currentUser && !currentUser.avatarUrl ? { avatarUrl: gh.avatar_url } : {}),
+            // never update avatar on linking, user should set this manually if they want
           },
         });
 
