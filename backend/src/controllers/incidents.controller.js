@@ -29,7 +29,7 @@ export const IncidentsController = {
                 repoId: { in: repoIds },
                 status: 'failure',
                 analysis: {
-                    priority: priority !== undefined ? priority : { lte: 2 } // P0, P1, P2 by default
+                    priority: priority !== undefined ? priority : { lte: 5 } // Show all priorities by default
                 }
             };
 
