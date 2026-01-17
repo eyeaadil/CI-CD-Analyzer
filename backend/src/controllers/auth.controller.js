@@ -102,12 +102,16 @@ export const AuthController = {
         }
 
         // Update the new user with GitHub credentials
+        // Don't overwrite avatar if user already has one (keep their original profile pic)
+        const currentUser = await prisma.user.findUnique({ where: { id: parseInt(linkUserId) } });
+        
         const updatedUser = await prisma.user.update({
           where: { id: parseInt(linkUserId) },
           data: {
             githubId: String(gh.id),
             githubAccessToken: accessToken,
-            avatarUrl: gh.avatar_url || undefined,
+            // Only set avatar if user doesn't have one
+            ...(currentUser && !currentUser.avatarUrl ? { avatarUrl: gh.avatar_url } : {}),
           },
         });
 
@@ -115,7 +119,8 @@ export const AuthController = {
 
         // Issue new JWT with updated info
         const token = signJwt({ sub: String(updatedUser.id), username: updatedUser.username });
-        return res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}&linked=true`);
+        // Redirect with linked=true and openModal=true to auto-open repo selection
+        return res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}&linked=true&openModal=true`);
       }
 
       // ========== NORMAL LOGIN/SIGNUP FLOW ==========
