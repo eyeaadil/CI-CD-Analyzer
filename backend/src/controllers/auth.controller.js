@@ -87,11 +87,21 @@ export const AuthController = {
           where: { githubId: String(gh.id) }
         });
 
+        // If GitHub is linked to a different user, unlink it first (re-linking)
         if (existingGithubUser && existingGithubUser.id !== parseInt(linkUserId)) {
-          return res.redirect(`${FRONTEND_URL}/repositories?error=This GitHub account is already linked to another user`);
+          console.log(`🔄 Re-linking GitHub @${gh.login}: Unlinking from User ${existingGithubUser.id}, linking to User ${linkUserId}`);
+          
+          // Unlink from old user
+          await prisma.user.update({
+            where: { id: existingGithubUser.id },
+            data: {
+              githubId: null,
+              githubAccessToken: null,
+            },
+          });
         }
 
-        // Update the existing user with GitHub credentials
+        // Update the new user with GitHub credentials
         const updatedUser = await prisma.user.update({
           where: { id: parseInt(linkUserId) },
           data: {
