@@ -425,4 +425,80 @@ ${chunkSummary || 'No error chunks available'}
       confidence: { score: 0.0, reason: 'AI classification failed' }
     };
   }
+
+  /**
+   * Chat with logs about a run
+   */
+  async chat(runId, message, history = []) {
+    try {
+      // 1. Retrieve RAG context (relevant logs for this question)
+      let contextChunks = [];
+      if (this.useRAG) {
+        contextChunks = await this.ragService.retrieveChatContext(runId, message);
+      }
+
+      // 2. Build prompt
+      const prompt = this.constructChatPrompt(message, contextChunks, history);
+
+      // 3. Send to Gemini
+      if (this.useRealAI) {
+        const result = await this.model.generateContent(prompt);
+        const response = await result.response;
+        return {
+          response: response.text(),
+          usedRAG: contextChunks.length > 0,
+          contextChunks: contextChunks.map(c => ({ 
+             index: c.chunkIndex, 
+             content: c.content?.substring(0, 100) + '...',
+             step: c.stepName
+          }))
+        };
+      } else {
+        return {
+          response: "Mock AI: I see you're asking about '" + message + "'. Based on your logs, it looks like a dependency issue in the build step.",
+          usedRAG: false,
+          contextChunks: []
+        };
+      }
+
+    } catch (error) {
+      console.error('Chat error:', error);
+      throw error;
+    }
+  }
+
+  constructChatPrompt(message, chunks, history) {
+    let prompt = `You are an expert CI/CD DevOps Engineer. 
+The user is asking questions about a specific specific build/workflow failure.
+You have access to relevant snippets of the build logs below.
+
+ROLE:
+- Helpful, technical, concise.
+- Cite specific log lines if possible.
+- If the logs don't contain the answer, admit it.
+
+USER QUESTION: "${message}"
+
+`;
+
+    if (history && history.length > 0) {
+      prompt += `\n== CHAT HISTORY ==\n`;
+      // Take last 4 messages to save context window
+      history.slice(-4).forEach(msg => {
+         prompt += `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.content}\n`;
+      });
+      prompt += `\n`;
+    }
+
+    if (chunks && chunks.length > 0) {
+      prompt += `\n== RELEVANT LOG SNIPPETS ==\n`;
+      chunks.forEach((chunk, i) => {
+        prompt += `[Snippet ${i+1}] (Step: ${chunk.stepName})\n${chunk.content}\n\n`;
+      });
+    } else {
+      prompt += `\n(No specific log parts were found relevant to this question. Answer based on general knowledge if possible, or ask for clarification.)\n`;
+    }
+
+    return prompt;
+  }
 }

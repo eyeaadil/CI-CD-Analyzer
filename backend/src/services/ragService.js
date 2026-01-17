@@ -244,4 +244,27 @@ export class RAGService {
 
         return { score, reason };
     }
+
+    /**
+     * Retrieve relevant chunks for a chat query within a specific run
+     * 
+     * @param {string} runId - The WorkflowRun ID
+     * @param {string} message - User's chat message
+     * @returns {Promise<Array>} - Relevant log chunks
+     */
+    async retrieveChatContext(runId, message) {
+        try {
+            console.log(`🔍 Chat RAG: Retrieving context for run ${runId}...`);
+            const embedding = await this.embeddingService.generateEmbedding(message);
+            
+            // Search specifically within this run's logs
+            const chunks = await this.vectorSearch.findRelevantChunksForRun(runId, embedding, 5);
+            
+            console.log(`✅ Chat RAG: Found ${chunks.length} relevant log chunks`);
+            return chunks;
+        } catch (error) {
+            console.error('Chat context retrieval failed:', error.message);
+            return [];
+        }
+    }
 }

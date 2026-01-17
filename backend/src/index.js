@@ -17,6 +17,7 @@ import analyticsRoutes from './routes/analytics.routes.js';
 import userRoutes from './routes/user.routes.js';
 import insightsRoutes from './routes/insights.routes.js';
 import incidentsRoutes from './routes/incidents.routes.js';
+import chatRoutes from './routes/chat.routes.js';
 import { LogParserService } from './services/logParser.js';
 import { AIAnalyzerService } from './services/aiAnalyzer.js';
 
@@ -73,7 +74,8 @@ app.use('/api/repos', repoRoutes);
 app.use('/api/runs', runRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/incidents', incidentsRoutes);
-console.log('API ROUTES LOADED: /api/dashboard, /api/analytics, /api/user, /api/repos, /api/runs, /api/insights, /api/incidents');
+app.use('/api/chat', chatRoutes);
+console.log('API ROUTES LOADED: /api/dashboard, /api/analytics, /api/user, /api/repos, /api/runs, /api/insights, /api/incidents, /api/chat');
 
 // 6. Global log analysis endpoint
 const logParser = new LogParserService();

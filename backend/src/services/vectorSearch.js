@@ -185,4 +185,38 @@ export class VectorSearchService {
       percentComplete: total > 0 ? ((withEmbeddings / total) * 100).toFixed(2) : 0,
     };
   }
+
+  /**
+   * Find relevant chunks within a specific run (Context Retrieval for Chat)
+   * 
+   * @param {string} runId - WorkflowRun ID
+   * @param {number[]} queryEmbedding - Query vector
+   * @param {number} limit - Max chunks to retrieve
+   */
+  async findRelevantChunksForRun(runId, queryEmbedding, limit = 5) {
+    try {
+      const vectorString = `[${queryEmbedding.join(',')}]`;
+      
+      const query = Prisma.sql`
+        SELECT 
+          lc.id,
+          lc."chunkIndex",
+          lc."stepName",
+          lc.content,
+          lc."hasErrors",
+          (1 - (lc.embedding <=> ${vectorString}::vector)) as similarity
+        FROM "LogChunk" lc
+        WHERE lc."workflowRunId" = ${runId}
+          AND lc.embedding IS NOT NULL
+        ORDER BY lc.embedding <=> ${vectorString}::vector
+        LIMIT ${limit}
+      `;
+
+      const results = await prisma.$queryRaw(query);
+      return results;
+    } catch (error) {
+      console.error('Run-specific vector search failed:', error.message);
+      return [];
+    }
+  }
 }
